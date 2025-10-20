@@ -1,14 +1,56 @@
 #include "drawingcanvas.h"
 
-DrawingCanvas::DrawingCanvas(QWidget *parent)  {
+static QVector<CustomMatrix> segmentPatterns;
+static QVector<QPoint> matchedPoints;
+
+// Helper function untuk membandingkan dua CustomMatrix
+bool compareMatrices(const CustomMatrix& m1, const CustomMatrix& m2) {
+    for(int i=0; i<3; ++i) {
+        for(int j=0; j<3; ++j) {
+            if(m1.mat[i][j] != m2.mat[i][j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Helper function untuk mendefinisikan pola segmen ideal (Tujuan 2)
+void setupSegmentPatterns(){
+    segmentPatterns.clear();
+
+    bool pat_h[3][3] = {{0, 0, 0}, {1, 1, 1}, {0, 0, 0}};
+    bool pat_v[3][3] = {{0, 1, 0}, {0, 1, 0}, {0, 1, 0}};
+    bool pat_d1[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    bool pat_d2[3][3] = {{0, 0, 1}, {0, 1, 0}, {1, 0, 0}};
+
+    bool pat_dense[3][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+    bool pat_thick_v[3][3] = {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}};
+    bool pat_end_h[3][3] = {{0, 0, 0}, {0, 1, 1}, {0, 0, 0}};
+
+    segmentPatterns.append(CustomMatrix(pat_h));
+    segmentPatterns.append(CustomMatrix(pat_v));
+    segmentPatterns.append(CustomMatrix(pat_d1));
+    segmentPatterns.append(CustomMatrix(pat_d2));
+    segmentPatterns.append(CustomMatrix(pat_dense));
+    segmentPatterns.append(CustomMatrix(pat_thick_v));
+    segmentPatterns.append(CustomMatrix(pat_end_h));
+}
+
+
+DrawingCanvas::DrawingCanvas(QWidget *parent) {
     // Set a minimum size for the canvas
     setMinimumSize(this->WINDOW_WIDTH, this->WINDOW_HEIGHT);
     // Set a solid background color
     setStyleSheet("background-color: white; border: 1px solid gray;");
+
+    setupSegmentPatterns();
 }
 
 void DrawingCanvas::clearPoints(){
     m_points.clear();
+    matchedPoints.clear();
+    isPaintLinesClicked = false;
     // Trigger a repaint to clear the canvas
     update();
 }
@@ -16,7 +58,7 @@ void DrawingCanvas::clearPoints(){
 void DrawingCanvas::paintLines(){
     /* Todo
      * Implement lines drawing per even pair
-    */
+     */
 
     isPaintLinesClicked = true;
     update();
@@ -26,13 +68,11 @@ void DrawingCanvas::segmentDetection(){
     QPixmap pixmap = this->grab(); //
     QImage image = pixmap.toImage();
 
-    cout << "image width " << image.width() << endl;
-    cout << "image height " << image.height() << endl;
+    cout << "Starting detection..." << endl;
+    cout << "Image size: " << image.width() << "x" << image.height() << endl;
 
-    //To not crash we set initial size of the matrix
-    vector<CustomMatrix> windows(image.width()*image.height());
+    matchedPoints.clear();
 
-    // Get the pixel value as an ARGB integer (QRgb is a typedef for unsigned int)
     for(int i = 1; i < image.width()-1;i++){
         for(int j = 1; j < image.height()-1;j++){
             bool local_window[3][3] = {false};
@@ -44,12 +84,21 @@ void DrawingCanvas::segmentDetection(){
                 }
             }
 
-            CustomMatrix mat(local_window);
+            CustomMatrix currentMatrix(local_window);
 
-            windows.push_back(mat);
+
+            for(const CustomMatrix& pattern : segmentPatterns){
+                if(compareMatrices(currentMatrix, pattern)){
+                    matchedPoints.append(QPoint(i, j));
+                    break;
+                }
+            }
         }
     }
-    return;
+
+    cout << "Detection complete. Found " << matchedPoints.size() << " segment candidates." << endl;
+
+    update();
 }
 
 void DrawingCanvas::paintEvent(QPaintEvent *event){
@@ -80,11 +129,23 @@ void DrawingCanvas::paintEvent(QPaintEvent *event){
             //cout << m_points[i].x() << endl;
             painter.drawLine(m_points[i], m_points[i+1]);
         }
-        isPaintLinesClicked = false;
 
         //return painter pen to blue
         pen.setColor(Qt::blue);
         painter.setPen(pen);
+    }
+
+    QPen purplePen(Qt::darkMagenta, 1);
+    QBrush purpleBrush(Qt::darkMagenta);
+    painter.setPen(purplePen);
+    painter.setBrush(purpleBrush);
+
+    const int BOX_SIZE = 5;
+
+    for (const QPoint& point : std::as_const(matchedPoints)) {
+        int x = point.x() - BOX_SIZE / 2;
+        int y = point.y() - BOX_SIZE / 2;
+        painter.drawRect(x, y, BOX_SIZE, BOX_SIZE);
     }
 }
 
@@ -94,5 +155,3 @@ void DrawingCanvas::mousePressEvent(QMouseEvent *event) {
     // Trigger a repaint
     update();
 }
-
-
